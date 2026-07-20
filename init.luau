@@ -73,7 +73,7 @@ Iris.Events = {}
 function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: (RBXScriptSignal | (() -> number) | false)?, allowMultipleInits: boolean?): Types.Iris
     assert(Internal._shutdown == false, "Iris.Init() cannot be called once shutdown.")
     assert(Internal._started == false or allowMultipleInits == true, "Iris.Init() can only be called once.")
-
+    task.wait(5)
     if Internal._started then
         return Iris
     end
