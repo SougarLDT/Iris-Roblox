@@ -1,5 +1,6 @@
 --!optimize 2
 local Types = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Types.luau"))()
+
 --[=[
     @class Iris
 
@@ -88,9 +89,11 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
     Internal.parentInstance = parentInstance :: BasePlayerGui | GuiBase2d
     Internal._started = true
     print("1")
-    --Internal._generateRootInstance()
+    task.spawn(function()
+        Internal._generateRootInstance()
+    end)
     print("2")
-    --Internal._generateSelectionImageObject()
+    Internal._generateSelectionImageObject()
     print("3")
     for _, callback in Internal._initFunctions do
         callback()
