@@ -73,7 +73,6 @@ Iris.Events = {}
 function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: (RBXScriptSignal | (() -> number) | false)?, allowMultipleInits: boolean?): Types.Iris
     assert(Internal._shutdown == false, "Iris.Init() cannot be called once shutdown.")
     assert(Internal._started == false or allowMultipleInits == true, "Iris.Init() can only be called once.")
-    task.wait(5)
     if Internal._started then
         return Iris
     end
@@ -89,9 +88,7 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
     Internal.parentInstance = parentInstance :: BasePlayerGui | GuiBase2d
     Internal._started = true
     print("1")
-    task.spawn(function()
-        Internal._generateRootInstance()
-    end)
+    Internal._generateRootInstance()
     print("2")
     Internal._generateSelectionImageObject()
     print("3")
