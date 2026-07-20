@@ -1,5 +1,6 @@
 --!optimize 2
 local Types = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Types.luau"))()
+
 --[=[
     @class Iris
 
@@ -78,6 +79,9 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
         return Iris
     end
     print("2")
+    for i,v in pairs(Internal) do
+        print(i,v, typeof(v))
+    end
     if parentInstance == nil then
         -- coalesce to playerGui
         print("2.3")
