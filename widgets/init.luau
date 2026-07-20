@@ -1,446 +1,699 @@
+--!optimize 2
 local Types = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Types.luau"))()
 
-local widgets = {} :: Types.WidgetUtility
+--[=[
+    @class Iris
 
-return function(Iris: Types.Internal)
-    widgets.GuiService = game:GetService("GuiService")
-    widgets.RunService = game:GetService("RunService")
-    widgets.UserInputService = game:GetService("UserInputService")
-    widgets.ContextActionService = game:GetService("ContextActionService")
-    widgets.TextService = game:GetService("TextService")
+    Iris; contains the all user-facing functions and properties.
+    A set of internal functions can be found in `Iris.Internal` (only use if you understand).
 
-    widgets.ICONS = {
-        BLANK_SQUARE = "rbxassetid://83265623867126",
-        RIGHT_POINTING_TRIANGLE = "rbxassetid://105541346271951",
-        DOWN_POINTING_TRIANGLE = "rbxassetid://95465797476827",
-        MULTIPLICATION_SIGN = "rbxassetid://133890060015237", -- best approximation for a close X which roblox supports, needs to be scaled about 2x
-        BOTTOM_RIGHT_CORNER = "rbxassetid://125737344915000", -- used in window resize icon in bottom right
-        CHECKMARK = "rbxassetid://109638815494221",
-        BORDER = "rbxassetid://133803690460269",
-        ALPHA_BACKGROUND_TEXTURE = "rbxassetid://114090016039876", -- used for color4 alpha
-        UNKNOWN_TEXTURE = "rbxassetid://95045813476061",
-    }
+    In its simplest form, users may start Iris by using
+    ```lua
+    Iris.Init()
 
-    widgets.IS_STUDIO = widgets.RunService:IsStudio()
-    function widgets.getTime()
-        -- time() always returns 0 in the context of plugins
-        if widgets.IS_STUDIO then
-            return os.clock()
-        else
-            return time()
-        end
-    end
-
-    -- acts as an offset where the absolute position of the base frame is not zero, such as IgnoreGuiInset or for stories
-    widgets.GuiOffset = if Iris._config.IgnoreGuiInset then -widgets.GuiService:GetGuiInset() else Vector2.zero
-    -- the registered mouse position always ignores the topbar, so needs a separate variable offset
-    widgets.MouseOffset = if Iris._config.IgnoreGuiInset then Vector2.zero else widgets.GuiService:GetGuiInset()
-
-    -- the topbar inset changes updates a frame later.
-    local connection: RBXScriptConnection
-    connection = widgets.GuiService:GetPropertyChangedSignal("TopbarInset"):Once(function()
-        widgets.MouseOffset = if Iris._config.IgnoreGuiInset then Vector2.zero else widgets.GuiService:GetGuiInset()
-        widgets.GuiOffset = if Iris._config.IgnoreGuiInset then -widgets.GuiService:GetGuiInset() else Vector2.zero
-        connection:Disconnect()
+    Iris:Connect(function()
+        Iris.Window({"My First Window!"})
+            Iris.Text({"Hello, World"})
+            Iris.Button({"Save"})
+            Iris.InputNum({"Input"})
+        Iris.End()
     end)
-    -- in case the topbar doesn't change, we cancel the event.
-    task.delay(5, function()
-        connection:Disconnect()
+    ```
+]=]
+local Iris = {} :: Types.Iris
+
+local Internal: Types.Internal = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Internal.luau"))()(Iris)
+
+--[=[
+    @within Iris
+    @prop Disabled boolean
+
+    While Iris.Disabled is true, execution of Iris and connected functions will be paused.
+    The widgets are not destroyed, they are just frozen so no changes will happen to them.
+]=]
+Iris.Disabled = false
+
+--[=[
+    @within Iris
+    @prop Args { [string]: { [string]: any } }
+
+    Provides a list of every possible Argument for each type of widget to it's index.
+    For instance, `Iris.Args.Window.NoResize`.
+    The Args table is useful for using widget Arguments without remembering their order.
+    ```lua
+    Iris.Window({"My Window", [Iris.Args.Window.NoResize] = true})
+    ```
+]=]
+Iris.Args = {}
+
+--[=[
+    @ignore
+    @within Iris
+    @prop Events table
+
+    -todo: work out what this is used for.
+]=]
+Iris.Events = {}
+
+--[=[
+    @within Iris
+    @function Init
+    @param parentInstance Instance? -- where Iris will place widgets UIs under, defaulting to [PlayerGui]
+    @param eventConnection (RBXScriptSignal | () -> () | false)? -- the event to determine an Iris cycle, defaulting to [Heartbeat]
+    @param allowMultipleInits boolean? -- allows subsequent calls 'Iris.Init()' to do nothing rather than error about initialising again, defaulting to false
+    @return Iris
+
+    Initializes Iris and begins rendering. Can only be called once.
+    See [Iris.Shutdown] to stop Iris, or [Iris.Disabled] to temporarily disable Iris.
+
+    Once initialized, [Iris:Connect] can be used to create a widget.
+
+    If the `eventConnection` is `false` then Iris will not create a cycle loop and the user will need to call [Internal._cycle] every frame.
+]=]
+function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: (RBXScriptSignal | (() -> number) | false)?, allowMultipleInits: boolean?): Types.Iris
+    assert(Internal._shutdown == false, "Iris.Init() cannot be called once shutdown.")
+    assert(Internal._started == false or allowMultipleInits == true, "Iris.Init() can only be called once.")
+    task.wait(5)
+    if Internal._started then
+        return Iris
+    end
+
+    if parentInstance == nil then
+        -- coalesce to playerGui
+        parentInstance = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    end
+    if eventConnection == nil then
+        -- coalesce to Heartbeat
+        eventConnection = game:GetService("RunService").Heartbeat
+    end
+    Internal.parentInstance = parentInstance :: BasePlayerGui | GuiBase2d
+    Internal._started = true
+    print("1")
+    task.spawn(function()
+        Internal._generateRootInstance()
     end)
-
-    function widgets.getMouseLocation()
-        return widgets.UserInputService:GetMouseLocation() - widgets.MouseOffset
+    print("2")
+    Internal._generateSelectionImageObject()
+    print("3")
+    for _, callback in Internal._initFunctions do
+        callback()
     end
-
-    function widgets.isPosInsideRect(pos: Vector2, rectMin: Vector2, rectMax: Vector2)
-        return pos.X >= rectMin.X and pos.X <= rectMax.X and pos.Y >= rectMin.Y and pos.Y <= rectMax.Y
-    end
-
-    function widgets.findBestWindowPosForPopup(refPos: Vector2, size: Vector2, outerMin: Vector2, outerMax: Vector2)
-        local CURSOR_OFFSET_DIST = 20
-
-        if refPos.X + size.X + CURSOR_OFFSET_DIST > outerMax.X then
-            if refPos.Y + size.Y + CURSOR_OFFSET_DIST > outerMax.Y then
-                -- placed to the top
-                refPos += Vector2.new(0, -(CURSOR_OFFSET_DIST + size.Y))
-            else
-                -- placed to the bottom
-                refPos += Vector2.new(0, CURSOR_OFFSET_DIST)
+    print("4")
+    -- spawns the connection to call `Internal._cycle()` within.
+    task.spawn(function()
+        if typeof(eventConnection) == "function" then
+            while Internal._started do
+                local deltaTime = eventConnection()
+                Internal._cycle(deltaTime)
             end
-        else
-            -- placed to the right
-            refPos += Vector2.new(CURSOR_OFFSET_DIST)
+        elseif eventConnection ~= nil and eventConnection ~= false then
+            Internal._eventConnection = eventConnection:Connect(function(...)
+                Internal._cycle(...)
+            end)
         end
-
-        return Vector2.new(math.max(math.min(refPos.X + size.X, outerMax.X) - size.X, outerMin.X), math.max(math.min(refPos.Y + size.Y, outerMax.Y) - size.Y, outerMin.Y))
-    end
-
-    function widgets.getScreenSizeForWindow(thisWidget: Types.Widget) -- possible parents are GuiBase2d, CoreGui, PlayerGui
-        if thisWidget.Instance:IsA("GuiBase2d") then
-            return thisWidget.Instance.AbsoluteSize
-        else
-            local rootParent = thisWidget.Instance.Parent
-            if rootParent:IsA("GuiBase2d") then
-                return rootParent.AbsoluteSize
-            else
-                if rootParent.Parent:IsA("GuiBase2d") then
-                    return rootParent.AbsoluteSize
-                else
-                    return workspace.CurrentCamera.ViewportSize
-                end
-            end
-        end
-    end
-
-    function widgets.extend(superClass: Types.WidgetClass, subClass: Types.WidgetClass): Types.WidgetClass
-        local newClass = table.clone(superClass)
-        for index, value in subClass do
-            newClass[index] = value
-        end
-        return newClass
-    end
-
-    function widgets.UIPadding(Parent: GuiObject, PxPadding: Vector2)
-        local UIPaddingInstance = Instance.new("UIPadding")
-        UIPaddingInstance.PaddingLeft = UDim.new(0, PxPadding.X)
-        UIPaddingInstance.PaddingRight = UDim.new(0, PxPadding.X)
-        UIPaddingInstance.PaddingTop = UDim.new(0, PxPadding.Y)
-        UIPaddingInstance.PaddingBottom = UDim.new(0, PxPadding.Y)
-        UIPaddingInstance.Parent = Parent
-        return UIPaddingInstance
-    end
-
-    function widgets.UIListLayout(Parent: GuiObject, FillDirection: Enum.FillDirection, Padding: UDim)
-        local UIListLayoutInstance = Instance.new("UIListLayout")
-        UIListLayoutInstance.SortOrder = Enum.SortOrder.LayoutOrder
-        UIListLayoutInstance.Padding = Padding
-        UIListLayoutInstance.FillDirection = FillDirection
-        UIListLayoutInstance.Parent = Parent
-        return UIListLayoutInstance
-    end
-
-    function widgets.UIStroke(Parent: GuiObject, Thickness: number, Color: Color3, Transparency: number)
-        local UIStrokeInstance = Instance.new("UIStroke")
-        UIStrokeInstance.Thickness = Thickness
-        UIStrokeInstance.Color = Color
-        UIStrokeInstance.Transparency = Transparency
-        UIStrokeInstance.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        UIStrokeInstance.LineJoinMode = Enum.LineJoinMode.Round
-        UIStrokeInstance.Parent = Parent
-        return UIStrokeInstance
-    end
-
-    function widgets.UICorner(Parent: GuiObject, PxRounding: number?)
-        local UICornerInstance = Instance.new("UICorner")
-        UICornerInstance.CornerRadius = UDim.new(PxRounding and 0 or 1, PxRounding or 0)
-        UICornerInstance.Parent = Parent
-        return UICornerInstance
-    end
-
-    function widgets.UISizeConstraint(Parent: GuiObject, MinSize: Vector2?, MaxSize: Vector2?)
-        local UISizeConstraintInstance = Instance.new("UISizeConstraint")
-        UISizeConstraintInstance.MinSize = MinSize or UISizeConstraintInstance.MinSize -- made these optional
-        UISizeConstraintInstance.MaxSize = MaxSize or UISizeConstraintInstance.MaxSize
-        UISizeConstraintInstance.Parent = Parent
-        return UISizeConstraintInstance
-    end
-
-    -- below uses Iris
-
-    function widgets.applyTextStyle(thisInstance: TextLabel & TextButton & TextBox)
-        thisInstance.FontFace = Iris._config.TextFont
-        thisInstance.TextSize = Iris._config.TextSize
-        thisInstance.TextColor3 = Iris._config.TextColor
-        thisInstance.TextTransparency = Iris._config.TextTransparency
-        thisInstance.TextXAlignment = Enum.TextXAlignment.Left
-        thisInstance.TextYAlignment = Enum.TextYAlignment.Center
-        thisInstance.RichText = Iris._config.RichText
-        thisInstance.TextWrapped = Iris._config.TextWrapped
-
-        thisInstance.AutoLocalize = false
-    end
-
-    function widgets.applyInteractionHighlights(Property: string, Button: GuiButton, Highlightee: GuiObject, Colors: { [string]: any })
-        local exitedButton = false
-        widgets.applyMouseEnter(Button, function()
-            Highlightee[Property .. "Color3"] = Colors.HoveredColor
-            Highlightee[Property .. "Transparency"] = Colors.HoveredTransparency
-
-            exitedButton = false
-        end)
-
-        widgets.applyMouseLeave(Button, function()
-            Highlightee[Property .. "Color3"] = Colors.Color
-            Highlightee[Property .. "Transparency"] = Colors.Transparency
-
-            exitedButton = true
-        end)
-
-        widgets.applyInputBegan(Button, function(input: InputObject)
-            if not (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Gamepad1) then
-                return
-            end
-            Highlightee[Property .. "Color3"] = Colors.ActiveColor
-            Highlightee[Property .. "Transparency"] = Colors.ActiveTransparency
-        end)
-
-        widgets.applyInputEnded(Button, function(input: InputObject)
-            if not (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Gamepad1) or exitedButton then
-                return
-            end
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                Highlightee[Property .. "Color3"] = Colors.HoveredColor
-                Highlightee[Property .. "Transparency"] = Colors.HoveredTransparency
-            end
-            if input.UserInputType == Enum.UserInputType.Gamepad1 then
-                Highlightee[Property .. "Color3"] = Colors.Color
-                Highlightee[Property .. "Transparency"] = Colors.Transparency
-            end
-        end)
-
-        Button.SelectionImageObject = Iris.SelectionImageObject
-    end
-
-    function widgets.applyInteractionHighlightsWithMultiHighlightee(Property: string, Button: GuiButton, Highlightees: { { GuiObject | { [string]: Color3 | number } } })
-        local exitedButton = false
-        widgets.applyMouseEnter(Button, function()
-            for _, Highlightee in Highlightees do
-                Highlightee[1][Property .. "Color3"] = Highlightee[2].HoveredColor
-                Highlightee[1][Property .. "Transparency"] = Highlightee[2].HoveredTransparency
-
-                exitedButton = false
-            end
-        end)
-
-        widgets.applyMouseLeave(Button, function()
-            for _, Highlightee in Highlightees do
-                Highlightee[1][Property .. "Color3"] = Highlightee[2].Color
-                Highlightee[1][Property .. "Transparency"] = Highlightee[2].Transparency
-
-                exitedButton = true
-            end
-        end)
-
-        widgets.applyInputBegan(Button, function(input: InputObject)
-            if not (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Gamepad1) then
-                return
-            end
-            for _, Highlightee in Highlightees do
-                Highlightee[1][Property .. "Color3"] = Highlightee[2].ActiveColor
-                Highlightee[1][Property .. "Transparency"] = Highlightee[2].ActiveTransparency
-            end
-        end)
-
-        widgets.applyInputEnded(Button, function(input: InputObject)
-            if not (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Gamepad1) or exitedButton then
-                return
-            end
-            for _, Highlightee in Highlightees do
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    Highlightee[1][Property .. "Color3"] = Highlightee[2].HoveredColor
-                    Highlightee[1][Property .. "Transparency"] = Highlightee[2].HoveredTransparency
-                end
-                if input.UserInputType == Enum.UserInputType.Gamepad1 then
-                    Highlightee[1][Property .. "Color3"] = Highlightee[2].Color
-                    Highlightee[1][Property .. "Transparency"] = Highlightee[2].Transparency
-                end
-            end
-        end)
-
-        Button.SelectionImageObject = Iris.SelectionImageObject
-    end
-
-    function widgets.applyFrameStyle(thisInstance: GuiObject, noPadding: boolean?, noCorner: boolean?)
-        -- padding, border, and rounding
-        -- optimized to only use what instances are needed, based on style
-        local FrameBorderSize = Iris._config.FrameBorderSize
-        local FrameRounding = Iris._config.FrameRounding
-        thisInstance.BorderSizePixel = 0
-
-        if FrameBorderSize > 0 then
-            widgets.UIStroke(thisInstance, FrameBorderSize, Iris._config.BorderColor, Iris._config.BorderTransparency)
-        end
-        if FrameRounding > 0 and not noCorner then
-            widgets.UICorner(thisInstance, FrameRounding)
-        end
-        if not noPadding then
-            widgets.UIPadding(thisInstance, Iris._config.FramePadding)
-        end
-    end
-
-    function widgets.applyButtonClick(thisInstance: GuiButton, callback: () -> ())
-        thisInstance.MouseButton1Click:Connect(function()
-            callback()
-        end)
-    end
-
-    function widgets.applyButtonDown(thisInstance: GuiButton, callback: (x: number, y: number) -> ())
-        thisInstance.MouseButton1Down:Connect(function(x: number, y: number)
-            local position = Vector2.new(x, y) - widgets.MouseOffset
-            callback(position.X, position.Y)
-        end)
-    end
-
-    function widgets.applyMouseEnter(thisInstance: GuiObject, callback: (x: number, y: number) -> ())
-        thisInstance.MouseEnter:Connect(function(x: number, y: number)
-            local position = Vector2.new(x, y) - widgets.MouseOffset
-            callback(position.X, position.Y)
-        end)
-    end
-
-    function widgets.applyMouseMoved(thisInstance: GuiObject, callback: (x: number, y: number) -> ())
-        thisInstance.MouseMoved:Connect(function(x: number, y: number)
-            local position = Vector2.new(x, y) - widgets.MouseOffset
-            callback(position.X, position.Y)
-        end)
-    end
-
-    function widgets.applyMouseLeave(thisInstance: GuiObject, callback: (x: number, y: number) -> ())
-        thisInstance.MouseLeave:Connect(function(x: number, y: number)
-            local position = Vector2.new(x, y) - widgets.MouseOffset
-            callback(position.X, position.Y)
-        end)
-    end
-
-    function widgets.applyInputBegan(thisInstance: GuiButton, callback: (input: InputObject) -> ())
-        thisInstance.InputBegan:Connect(function(...)
-            callback(...)
-        end)
-    end
-
-    function widgets.applyInputEnded(thisInstance: GuiButton, callback: (input: InputObject) -> ())
-        thisInstance.InputEnded:Connect(function(...)
-            callback(...)
-        end)
-    end
-
-    function widgets.discardState(thisWidget: Types.StateWidget)
-        for _, state in thisWidget.state do
-            state.ConnectedWidgets[thisWidget.ID] = nil
-        end
-    end
-
-    function widgets.registerEvent(event: string, callback: (...any) -> ())
-        table.insert(Iris._initFunctions, function()
-            table.insert(Iris._connections, widgets.UserInputService[event]:Connect(callback))
-        end)
-    end
-
-    widgets.EVENTS = {
-        hover = function(pathToHovered: (thisWidget: Types.Widget) -> GuiObject)
-            return {
-                ["Init"] = function(thisWidget: Types.Widget & Types.Hovered)
-                    local hoveredGuiObject = pathToHovered(thisWidget)
-                    widgets.applyMouseEnter(hoveredGuiObject, function()
-                        thisWidget.isHoveredEvent = true
-                    end)
-                    widgets.applyMouseLeave(hoveredGuiObject, function()
-                        thisWidget.isHoveredEvent = false
-                    end)
-                    thisWidget.isHoveredEvent = false
-                end,
-                ["Get"] = function(thisWidget: Types.Widget & Types.Hovered)
-                    return thisWidget.isHoveredEvent
-                end,
-            }
-        end,
-
-        click = function(pathToClicked: (thisWidget: Types.Widget) -> GuiButton)
-            return {
-                ["Init"] = function(thisWidget: Types.Widget & Types.Clicked)
-                    local clickedGuiObject = pathToClicked(thisWidget)
-                    thisWidget.lastClickedTick = -1
-
-                    widgets.applyButtonClick(clickedGuiObject, function()
-                        thisWidget.lastClickedTick = Iris._cycleTick + 1
-                    end)
-                end,
-                ["Get"] = function(thisWidget: Types.Widget & Types.Clicked)
-                    return thisWidget.lastClickedTick == Iris._cycleTick
-                end,
-            }
-        end,
-
-        rightClick = function(pathToClicked: (thisWidget: Types.Widget) -> GuiButton)
-            return {
-                ["Init"] = function(thisWidget: Types.Widget & Types.RightClicked)
-                    local clickedGuiObject = pathToClicked(thisWidget)
-                    thisWidget.lastRightClickedTick = -1
-
-                    clickedGuiObject.MouseButton2Click:Connect(function()
-                        thisWidget.lastRightClickedTick = Iris._cycleTick + 1
-                    end)
-                end,
-                ["Get"] = function(thisWidget: Types.Widget & Types.RightClicked)
-                    return thisWidget.lastRightClickedTick == Iris._cycleTick
-                end,
-            }
-        end,
-
-        doubleClick = function(pathToClicked: (thisWidget: Types.Widget) -> GuiButton)
-            return {
-                ["Init"] = function(thisWidget: Types.Widget & Types.DoubleClicked)
-                    local clickedGuiObject = pathToClicked(thisWidget)
-                    thisWidget.lastClickedTime = -1
-                    thisWidget.lastClickedPosition = Vector2.zero
-                    thisWidget.lastDoubleClickedTick = -1
-
-                    widgets.applyButtonDown(clickedGuiObject, function(x: number, y: number)
-                        local currentTime = widgets.getTime()
-                        local isTimeValid = currentTime - thisWidget.lastClickedTime < Iris._config.MouseDoubleClickTime
-                        if isTimeValid and (Vector2.new(x, y) - thisWidget.lastClickedPosition).Magnitude < Iris._config.MouseDoubleClickMaxDist then
-                            thisWidget.lastDoubleClickedTick = Iris._cycleTick + 1
-                        else
-                            thisWidget.lastClickedTime = currentTime
-                            thisWidget.lastClickedPosition = Vector2.new(x, y)
-                        end
-                    end)
-                end,
-                ["Get"] = function(thisWidget: Types.Widget & Types.DoubleClicked)
-                    return thisWidget.lastDoubleClickedTick == Iris._cycleTick
-                end,
-            }
-        end,
-
-        ctrlClick = function(pathToClicked: (thisWidget: Types.Widget) -> GuiButton)
-            return {
-                ["Init"] = function(thisWidget: Types.Widget & Types.CtrlClicked)
-                    local clickedGuiObject = pathToClicked(thisWidget)
-                    thisWidget.lastCtrlClickedTick = -1
-
-                    widgets.applyButtonClick(clickedGuiObject, function()
-                        if widgets.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or widgets.UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
-                            thisWidget.lastCtrlClickedTick = Iris._cycleTick + 1
-                        end
-                    end)
-                end,
-                ["Get"] = function(thisWidget: Types.Widget & Types.CtrlClicked)
-                    return thisWidget.lastCtrlClickedTick == Iris._cycleTick
-                end,
-            }
-        end,
-    }
-
-    Iris._utility = widgets
-
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Root.luau"))()(Iris, widgets)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Window.luau"))()(Iris, widgets)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Menu.luau"))()(Iris, widgets)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Format.luau"))()(Iris, widgets)
-
-
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Text.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Button.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Checkbox.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/RadioButton.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Image.luau"))()(Iris, widgets)
-
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Tree.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Tab.luau"))()(Iris, widgets)
-
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Input.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Combo.luau"))()(Iris, widgets)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Plot.luau"))()(Iris, widgets)
-
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/Table.luau"))()(Iris, widgets)
+    end)
+    print("5")
+    return Iris
 end
+
+--[=[
+    @within Iris
+    @function Shutdown
+
+    Shuts Iris down. This can only be called once, and Iris cannot be started once shut down.
+]=]
+function Iris.Shutdown()
+    Internal._started = false
+    Internal._shutdown = true
+
+    if Internal._eventConnection then
+        Internal._eventConnection:Disconnect()
+    end
+    Internal._eventConnection = nil
+
+    if Internal._rootWidget then
+        if Internal._rootWidget.Instance then
+            Internal._widgets["Root"].Discard(Internal._rootWidget)
+        end
+        Internal._rootInstance = nil
+    end
+
+    if Internal.SelectionImageObject then
+        Internal.SelectionImageObject:Destroy()
+    end
+
+    for _, connection in Internal._connections do
+        connection:Disconnect()
+    end
+end
+
+--[=[
+    @within Iris
+    @method Connect
+    @param callback () -> () -- the callback containg the Iris code
+    @return () -> () -- call to disconnect it
+
+    Connects a function which will execute every Iris cycle. [Iris.Init] must be called before connecting.
+
+    A cycle is determined by the `eventConnection` passed to [Iris.Init] (default to [RunService.Heartbeat]).
+
+    Multiple callbacks can be added to Iris from many different scripts or modules.
+]=]
+function Iris:Connect(callback: () -> ()): () -> () -- this uses method syntax for no reason.
+    if Internal._started == false then
+        warn("Iris:Connect() was called before calling Iris.Init(); always initialise Iris first.")
+    end
+    local connectionIndex = #Internal._connectedFunctions + 1
+    Internal._connectedFunctions[connectionIndex] = callback
+    return function()
+        Internal._connectedFunctions[connectionIndex] = nil
+    end
+end
+
+--[=[
+    @within Iris
+    @function Append
+    @param userInstance GuiObject -- the Roblox [Instance] to insert into Iris
+
+    Inserts any Roblox [Instance] into Iris.
+
+    The parent of the inserted instance can either be determined by the `_config.Parent`
+    property or by the current parent widget from the stack.
+]=]
+function Iris.Append(userInstance: GuiObject)
+    local parentWidget = Internal._GetParentWidget()
+    local widgetInstanceParent: GuiObject
+    if Internal._config.Parent then
+        widgetInstanceParent = Internal._config.Parent :: any
+    else
+        widgetInstanceParent = Internal._widgets[parentWidget.type].ChildAdded(parentWidget, { type = "userInstance" } :: Types.Widget)
+    end
+    userInstance.Parent = widgetInstanceParent
+end
+
+--[=[
+    @within Iris
+    @function End
+
+    Marks the end of any widgets which contain children. For example:
+    ```lua
+    -- Widgets placed here **will not** be inside the tree
+    Iris.Text({"Above and outside the tree"})
+
+    -- A Tree widget can contain children.
+    -- We must therefore remember to call `Iris.End()`
+    Iris.Tree({"My First Tree"})
+        -- Widgets placed here **will** be inside the tree
+        Iris.Text({"Tree item 1"})
+        Iris.Text({"Tree item 2"})
+    Iris.End()
+
+    -- Widgets placed here **will not** be inside the tree
+    Iris.Text({"Below and outside the tree"})
+    ```
+    :::caution Caution: Error
+    Seeing the error `Callback has too few calls to Iris.End()` or `Callback has too many calls to Iris.End()`?
+    Using the wrong amount of `Iris.End()` calls in your code will lead to an error.
+
+    Each widget called which might have children should be paired with a call to `Iris.End()`, **even if the Widget doesnt currently have any children**.
+    :::
+]=]
+function Iris.End()
+    if Internal._stackIndex == 1 then
+        error("Too many calls to Iris.End().", 2)
+    end
+
+    Internal._IDStack[Internal._stackIndex] = nil
+    Internal._stackIndex -= 1
+end
+
+--[[
+    ------------------------
+        [SECTION] Config
+    ------------------------
+]]
+
+--[=[
+    @within Iris
+    @function ForceRefresh
+
+    Destroys and regenerates all instances used by Iris. Useful if you want to propogate state changes.
+    :::caution Caution: Performance
+    Because this function Deletes and Initializes many instances, it may cause **performance issues** when used with many widgets.
+    In **no** case should it be called every frame.
+    :::
+]=]
+function Iris.ForceRefresh()
+    Internal._globalRefreshRequested = true
+end
+
+--[=[
+    @within Iris
+    @function UpdateGlobalConfig
+    @param deltaStyle { [string]: any } -- a table containing the changes in style ex: `{ItemWidth = UDim.new(0, 100)}`
+
+    Customizes the configuration which **every** widget will inherit from.
+
+    It can be used along with [Iris.TemplateConfig] to easily swap styles, for example:
+    ```lua
+    Iris.UpdateGlobalConfig(Iris.TemplateConfig.colorLight) -- use light theme
+    ```
+    :::caution Caution: Performance
+    This function internally calls [Iris.ForceRefresh] so that style changes are propogated.
+
+    As such, it may cause **performance issues** when used with many widgets.
+    In **no** case should it be called every frame.
+    :::
+]=]
+function Iris.UpdateGlobalConfig(deltaStyle: { [string]: any })
+    for index, style in deltaStyle do
+        Internal._rootConfig[index] = style
+    end
+    Iris.ForceRefresh()
+end
+
+--[=[
+    @within Iris
+    @function PushConfig
+    @param deltaStyle { [string]: any } -- a table containing the changes in style ex: `{ItemWidth = UDim.new(0, 100)}`
+
+    Allows cascading of a style by allowing styles to be locally and hierarchically applied.
+
+    Each call to Iris.PushConfig must be paired with a call to [Iris.PopConfig], for example:
+    ```lua
+    Iris.Text({"boring text"})
+
+    Iris.PushConfig({TextColor = Color3.fromRGB(128, 0, 256)})
+        Iris.Text({"Colored Text!"})
+    Iris.PopConfig()
+
+    Iris.Text({"boring text"})
+    ```
+]=]
+function Iris.PushConfig(deltaStyle: { [string]: any })
+    local ID = Iris.State(-1)
+    if ID.value == -1 then
+        ID:set(deltaStyle)
+    else
+        -- compare tables
+        if Internal._deepCompare(ID:get(), deltaStyle) == false then
+            -- refresh local
+            ID:set(deltaStyle)
+            Internal._refreshStack[Internal._refreshLevel] = true
+            Internal._refreshCounter += 1
+        end
+    end
+    Internal._refreshLevel += 1
+
+    Internal._config = setmetatable(deltaStyle, {
+        __index = Internal._config,
+    }) :: any
+end
+
+--[=[
+    @within Iris
+    @function PopConfig
+
+    Ends a [Iris.PushConfig] style.
+
+    Each call to [Iris.PopConfig] should match a call to [Iris.PushConfig].
+]=]
+function Iris.PopConfig()
+    Internal._refreshLevel -= 1
+    if Internal._refreshStack[Internal._refreshLevel] == true then
+        Internal._refreshCounter -= 1
+        Internal._refreshStack[Internal._refreshLevel] = nil
+    end
+
+    Internal._config = getmetatable(Internal._config :: any).__index
+end
+
+--[=[
+
+    @within Iris
+    @prop TemplateConfig { [string]: { [string]: any } }
+
+    TemplateConfig provides a table of default styles and configurations which you may apply to your UI.
+]=]
+Iris.TemplateConfig = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/config.luau"))()
+Iris.UpdateGlobalConfig(Iris.TemplateConfig.colorDark) -- use colorDark and sizeDefault themes by default
+Iris.UpdateGlobalConfig(Iris.TemplateConfig.sizeDefault)
+Iris.UpdateGlobalConfig(Iris.TemplateConfig.utilityDefault)
+Internal._globalRefreshRequested = false -- UpdatingGlobalConfig changes this to true, leads to Root being generated twice.
+
+--[[
+    --------------------
+        [SECTION] ID
+    --------------------
+]]
+
+--[=[
+    @within Iris
+    @function PushId
+    @param id ID -- custom id
+
+    Pushes an id onto the id stack for all future widgets. Use [Iris.PopId] to pop it off the stack.
+]=]
+function Iris.PushId(ID: Types.ID)
+    assert(typeof(ID) == "string", "The ID argument to Iris.PushId() to be a string.")
+
+    Internal._newID = true
+    table.insert(Internal._pushedIds, ID)
+end
+
+--[=[
+    @within Iris
+    @function PopID
+
+    Removes the most recent pushed id from the id stack.
+]=]
+function Iris.PopId()
+    if #Internal._pushedIds == 0 then
+        return
+    end
+
+    table.remove(Internal._pushedIds)
+end
+
+--[=[
+    @within Iris
+    @function SetNextWidgetID
+    @param id ID -- custom id.
+
+    Sets the id for the next widget. Useful for using [Iris.Append] on the same widget.
+    ```lua
+    Iris.SetNextWidgetId("demo_window")
+    Iris.Window({ "Window" })
+        Iris.Text({ "Text one placed here." })
+    Iris.End()
+
+    -- later in the code
+
+    Iris.SetNextWidgetId("demo_window")
+    Iris.Window()
+        Iris.Text({ "Text two placed here." })
+    Iris.End()
+
+    -- both text widgets will be placed under the same window despite being called separately.
+    ```
+]=]
+function Iris.SetNextWidgetID(ID: Types.ID)
+    Internal._nextWidgetId = ID
+end
+
+--[[
+    -----------------------
+        [SECTION] State
+    -----------------------
+]]
+
+--[=[
+    @within Iris
+    @function State<T>
+    @param initialValue T -- the initial value for the state
+    @return State<T>
+    @tag State
+
+    Constructs a new [State] object. Subsequent ID calls will return the same object.
+    :::info
+    Iris.State allows you to create "references" to the same value while inside your UI drawing loop.
+    For example:
+    ```lua
+    Iris:Connect(function()
+        local myNumber = 5
+        myNumber = myNumber + 1
+        Iris.Text({"The number is: " .. myNumber})
+    end)
+    ```
+    This is problematic. Each time the function is called, a new myNumber is initialized, instead of retrieving the old one.
+    The above code will always display 6.
+    ***
+    Iris.State solves this problem:
+    ```lua
+    Iris:Connect(function()
+        local myNumber = Iris.State(5)
+        myNumber:set(myNumber:get() + 1)
+        Iris.Text({"The number is: " .. myNumber})
+    end)
+    ```
+    In this example, the code will work properly, and increment every frame.
+    :::
+]=]
+function Iris.State<T>(initialValue: T)
+    local ID = Internal._getID(2)
+    if Internal._states[ID] then
+        return Internal._states[ID]
+    end
+    local newState = {
+        ID = ID,
+        value = initialValue,
+        lastChangeTick = Iris.Internal._cycleTick,
+        ConnectedWidgets = {},
+        ConnectedFunctions = {},
+    } :: Types.State<T>
+    setmetatable(newState, Internal.StateClass)
+    Internal._states[ID] = newState
+    return newState
+end
+
+--[=[
+    @within Iris
+    @function WeakState<T>
+    @param initialValue T -- the initial value for the state
+    @return State<T>
+    @tag State
+
+    Constructs a new state object, subsequent ID calls will return the same object, except all widgets connected to the state are discarded, the state reverts to the passed initialValue
+]=]
+function Iris.WeakState<T>(initialValue: T)
+    local ID = Internal._getID(2)
+    if Internal._states[ID] then
+        if next(Internal._states[ID].ConnectedWidgets) == nil then
+            Internal._states[ID] = nil
+        else
+            return Internal._states[ID]
+        end
+    end
+    local newState = {
+        ID = ID,
+        value = initialValue,
+        lastChangeTick = Iris.Internal._cycleTick,
+        ConnectedWidgets = {},
+        ConnectedFunctions = {},
+    } :: Types.State<T>
+    setmetatable(newState, Internal.StateClass)
+    Internal._states[ID] = newState
+    return newState
+end
+
+--[=[
+    @within Iris
+    @function VariableState<T>
+    @param variable T -- the variable to track
+    @param callback (T) -> () -- a function which sets the new variable locally
+    @return State<T>
+    @tag State
+
+    Returns a state object linked to a local variable.
+
+    The passed variable is used to check whether the state object should update. The callback method is used to change the local variable when the state changes.
+
+    The existence of such a function is to make working with local variables easier.
+    Since Iris cannot directly manipulate the memory of the variable, like in C++, it must instead rely on the user updating it through the callback provided.
+    Additionally, because the state value is not updated when created or called we cannot return the new value back, instead we require a callback for the user to update.
+
+    ```lua
+    local myNumber = 5
+
+    local state = Iris.VariableState(myNumber, function(value)
+        myNumber = value
+    end)
+    Iris.DragNum({ "My number" }, { number = state })
+    ```
+
+    This is how Dear ImGui does the same in C++ where we can just provide the memory location to the variable which is then updated directly.
+    ```cpp
+    static int myNumber = 5;
+    ImGui::DragInt("My number", &myNumber); // Here in C++, we can directly pass the variable.
+    ```
+
+    :::caution Caution: Update Order
+    If the variable and state value are different when calling this, the variable value takes precedence.
+
+    Therefore, if you update the state using `state.value = ...` then it will be overwritten by the variable value.
+    You must use `state:set(...)` if you want the variable to update to the state's value.
+    :::
+]=]
+function Iris.VariableState<T>(variable: T, callback: (T) -> ())
+    local ID = Internal._getID(2)
+    local state = Internal._states[ID]
+
+    if state then
+        if variable ~= state.value then
+            state:set(variable)
+        end
+        return state
+    end
+
+    local newState = {
+        ID = ID,
+        value = variable,
+        lastChangeTick = Iris.Internal._cycleTick,
+        ConnectedWidgets = {},
+        ConnectedFunctions = {},
+    } :: Types.State<T>
+    setmetatable(newState, Internal.StateClass)
+    Internal._states[ID] = newState
+
+    newState:onChange(callback)
+
+    return newState
+end
+
+--[=[
+    @within Iris
+    @function TableState<K, V>
+    @param table { [K]: V } -- the table containing the value
+    @param key K -- the key to the value in table
+    @param callback ((newValue: V) -> false?)? -- a function called when the state is changed
+    @return State<V>
+    @tag State
+
+    Similar to Iris.VariableState but takes a table and key to modify a specific value and a callback to determine whether to update the value.
+
+    The passed table and key are used to check the value. The callback is called when the state changes value and determines whether we update the table.
+    This is useful if we want to monitor a table value which needs to call other functions when changed.
+
+    Since tables are pass-by-reference, we can modify the table anywhere and it will update all other instances. Therefore, we don't need a callback by default.
+    ```lua
+    local data = {
+        myNumber = 5
+    }
+
+    local state = Iris.TableState(data, "myNumber")
+    Iris.DragNum({ "My number" }, { number = state })
+    ```
+
+    Here the `data._started` should never be updated directly, only through the `toggle` function. However, we still want to monitor the value and be able to change it.
+    Therefore, we use the callback to toggle the function for us and prevent Iris from updating the table value by returning false.
+    ```lua
+    local data = {
+        _started = false
+    }
+
+    local function toggle(enabled: boolean)
+        data._started = enabled
+        if data._started then
+            start(...)
+        else
+            stop(...)
+        end
+    end
+
+    local state = Iris.TableState(data, "_started", function(stateValue: boolean)
+       toggle(stateValue)
+       return false
+    end)
+    Iris.Checkbox({ "Started" }, { isChecked = state })
+    ```
+
+    :::caution Caution: Update Order
+    If the table value and state value are different when calling this, the table value value takes precedence.
+
+    Therefore, if you update the state using `state.value = ...` then it will be overwritten by the table value.
+    You must use `state:set(...)` if you want the table value to update to the state's value.
+    :::
+]=]
+function Iris.TableState<K, V>(tab: { [K]: V }, key: K, callback: ((newValue: V) -> true?)?)
+    local value = tab[key]
+    local ID = Internal._getID(2)
+    local state = Internal._states[ID]
+
+    -- If the table values changes, then we update the state to match.
+    if state then
+        if value ~= state.value then
+            state:set(value)
+        end
+        return state
+    end
+
+    local newState = {
+        ID = ID,
+        value = value,
+        lastChangeTick = Iris.Internal._cycleTick,
+        ConnectedWidgets = {},
+        ConnectedFunctions = {},
+    } :: Types.State<V>
+    setmetatable(newState, Internal.StateClass)
+    Internal._states[ID] = newState
+
+    -- When a change happens to the state, we update the table value.
+    newState:onChange(function()
+        if callback ~= nil then
+            if callback(newState.value) then
+                tab[key] = newState.value
+            end
+        else
+            tab[key] = newState.value
+        end
+    end)
+    return newState
+end
+
+--[=[
+    @within Iris
+    @function ComputedState<T, U>
+    @param firstState State<T> -- State to bind to.
+    @param onChangeCallback (firstValue: T) -> U -- callback which should return a value transformed from the firstState value
+    @return State<U>
+
+    Constructs a new State object, but binds its value to the value of another State.
+    :::info
+    A common use case for this constructor is when a boolean State needs to be inverted:
+    ```lua
+    Iris.ComputedState(otherState, function(newValue)
+        return not newValue
+    end)
+    ```
+    :::
+]=]
+function Iris.ComputedState<T, U>(firstState: Types.State<T>, onChangeCallback: (firstValue: T) -> U)
+    local ID = Internal._getID(2)
+
+    if Internal._states[ID] then
+        return Internal._states[ID]
+    else
+        local newState = {
+            ID = ID,
+            value = onChangeCallback(firstState.value),
+            lastChangeTick = Iris.Internal._cycleTick,
+            ConnectedWidgets = {},
+            ConnectedFunctions = {},
+        } :: Types.State<T>
+        setmetatable(newState, Internal.StateClass)
+        Internal._states[ID] = newState
+
+        firstState:onChange(function(newValue: T)
+            newState:set(onChangeCallback(newValue))
+        end)
+        return newState
+    end
+end
+
+--[=[
+    @within Iris
+    @function ShowDemoWindow
+
+    ShowDemoWindow is a function which creates a Demonstration window. this window contains many useful utilities for coders,
+    and serves as a refrence for using each part of the library. Ideally, the DemoWindow should always be available in your UI.
+    It is the same as any other callback you would connect to Iris using [Iris.Connect]
+    ```lua
+    Iris:Connect(Iris.ShowDemoWindow)
+    ```
+]=]
+Iris.ShowDemoWindow = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/demoWindow.luau"))()(Iris)
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/init.luau"))()(Internal)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/API.luau"))()(Iris)
+
+return Iris
