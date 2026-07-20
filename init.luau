@@ -1,5 +1,6 @@
 --!optimize 2
 local Types = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Types.luau"))()
+
 --[=[
     @class Iris
 
@@ -78,22 +79,21 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
         return Iris
     end
     print("2")
-    for i,v in pairs(Internal) do
-        print(i,v, typeof(v))
-    end
     if parentInstance == nil then
         -- coalesce to playerGui
-        print("2.3")
+        print("2.1")
         parentInstance = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
     end
     if eventConnection == nil then
         -- coalesce to Heartbeat
-        print("2.4")
+        print("2.2")
         eventConnection = game:GetService("RunService").Heartbeat
     end
+    print("2.3")
     Internal.parentInstance = parentInstance :: BasePlayerGui | GuiBase2d
+    print("2.35")
     Internal._started = true
-
+    print("2.4")
     Internal._generateRootInstance()
     print("2.5")
     Internal._generateSelectionImageObject()
