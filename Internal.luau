@@ -773,11 +773,10 @@ return function(Iris: Types.Iris): Types.Internal
         local SelectionImageObject = Instance.new("Frame")
         SelectionImageObject.Position = UDim2.fromOffset(-1, -1)
         SelectionImageObject.Size = UDim2.new(1, 2, 1, 2)
-        SelectionImageObject.BackgroundColor3 = Internal._config.SelectionImageObjectColor
-        SelectionImageObject.BackgroundTransparency = Internal._config.SelectionImageObjectTransparency
+        SelectionImageObject.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        SelectionImageObject.BackgroundTransparency = 0
         SelectionImageObject.BorderSizePixel = 0
 
-        Internal._utility.UIStroke(SelectionImageObject, 1, Internal._config.SelectionImageObjectBorderColor, Internal._config.SelectionImageObjectBorderTransparency)
         Internal._utility.UICorner(SelectionImageObject, 2)
 
         Internal.SelectionImageObject = SelectionImageObject
