@@ -73,11 +73,11 @@ Iris.Events = {}
 function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: (RBXScriptSignal | (() -> number) | false)?, allowMultipleInits: boolean?): Types.Iris
     assert(Internal._shutdown == false, "Iris.Init() cannot be called once shutdown.")
     assert(Internal._started == false or allowMultipleInits == true, "Iris.Init() can only be called once.")
-
+    print("1")
     if Internal._started then
         return Iris
     end
-
+    print("2")
     if parentInstance == nil then
         -- coalesce to playerGui
         parentInstance = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
@@ -91,11 +91,11 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
 
     Internal._generateRootInstance()
     Internal._generateSelectionImageObject()
-
+    print("3")
     for _, callback in Internal._initFunctions do
         callback()
     end
-
+    print("4")
     -- spawns the connection to call `Internal._cycle()` within.
     task.spawn(function()
         if typeof(eventConnection) == "function" then
@@ -109,7 +109,7 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
             end)
         end
     end)
-
+    print("5")
     return Iris
 end
 
