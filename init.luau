@@ -693,7 +693,7 @@ end
 ]=]
 Iris.ShowDemoWindow = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/demoWindow.luau"))()(Iris)
 
-loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Internal.luau"))()(Internal)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/widgets/init.luau"))()(Internal)
 loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/API.luau"))()(Iris)
 
 return Iris
