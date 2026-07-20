@@ -91,6 +91,7 @@ function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: 
     Internal._started = true
 
     Internal._generateRootInstance()
+    print("2.5")
     Internal._generateSelectionImageObject()
     print("3")
     for _, callback in Internal._initFunctions do
