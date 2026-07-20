@@ -1,5 +1,6 @@
 --!optimize 2
 local Types = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Types.luau"))()
+
 --[=[
     @class Iris
 
@@ -70,32 +71,27 @@ Iris.Events = {}
     If the `eventConnection` is `false` then Iris will not create a cycle loop and the user will need to call [Internal._cycle] every frame.
 ]=]
 function Iris.Init(parentInstance: BasePlayerGui | GuiBase2d?, eventConnection: (RBXScriptSignal | (() -> number) | false)?, allowMultipleInits: boolean?): Types.Iris
-    print("0")
     assert(Internal._shutdown == false, "Iris.Init() cannot be called once shutdown.")
     assert(Internal._started == false or allowMultipleInits == true, "Iris.Init() can only be called once.")
-    print("1")
+
     if Internal._started then
         return Iris
     end
-    print("2")
+
     if parentInstance == nil then
         -- coalesce to playerGui
-        print("2.1")
         parentInstance = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
     end
     if eventConnection == nil then
         -- coalesce to Heartbeat
-        print("2.2")
         eventConnection = game:GetService("RunService").Heartbeat
     end
-    print("2.3")
     Internal.parentInstance = parentInstance :: BasePlayerGui | GuiBase2d
-    print("2.35")
     Internal._started = true
-    print("2.4")
-    Internal._generateRootInstance()
-    print("2.5")
-    Internal._generateSelectionImageObject()
+    print("1")
+    --Internal._generateRootInstance()
+    print("2")
+    --Internal._generateSelectionImageObject()
     print("3")
     for _, callback in Internal._initFunctions do
         callback()
