@@ -58,7 +58,7 @@ return function(Iris: Types.Internal, widgets: Types.WidgetUtility)
             TooltipContainer.BackgroundTransparency = 1
             TooltipContainer.BorderSizePixel = 0
 
-            --widgets.UIListLayout(TooltipContainer, Enum.FillDirection.Vertical, UDim.new(0, Iris._config.PopupBorderSize))
+            widgets.UIListLayout(TooltipContainer, Enum.FillDirection.Vertical, UDim.new(0, Iris._config.PopupBorderSize))
 
             TooltipContainer.Parent = PopupScreenGui
 
@@ -90,8 +90,8 @@ return function(Iris: Types.Internal, widgets: Types.WidgetUtility)
 
             PseudoWindow.Visible = false
 
-            --widgets.UIPadding(PseudoWindow, Iris._config.WindowPadding)
-            --widgets.UIListLayout(PseudoWindow, Enum.FillDirection.Vertical, UDim.new(0, Iris._config.ItemSpacing.Y))
+            widgets.UIPadding(PseudoWindow, Iris._config.WindowPadding)
+            widgets.UIListLayout(PseudoWindow, Enum.FillDirection.Vertical, UDim.new(0, Iris._config.ItemSpacing.Y))
 
             PseudoWindow.Parent = PseudoWindowScreenGui
 
