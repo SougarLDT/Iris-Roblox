@@ -777,7 +777,7 @@ return function(Iris: Types.Iris): Types.Internal
         SelectionImageObject.BackgroundTransparency = 0
         SelectionImageObject.BorderSizePixel = 0
 
-        Internal._utility.UICorner(SelectionImageObject, 2)
+        --Internal._utility.UICorner(SelectionImageObject, 2)
 
         Internal.SelectionImageObject = SelectionImageObject
     end
