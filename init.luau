@@ -1,6 +1,5 @@
 --!optimize 2
 local Types = loadstring(game:HttpGet("https://raw.githubusercontent.com/SougarLDT/Iris-Roblox/refs/heads/main/Types.luau"))()
-
 --[=[
     @class Iris
 
